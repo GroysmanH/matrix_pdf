@@ -10,8 +10,9 @@
         blocks: [],          // { id, label, text }
         matrixConfig: null,   // { title, xLabel, yLabel, cols, rows, theme, cellSize }
         cellData: {},         // { "row-col": [blockId, ...] }
-        apiKey: localStorage.getItem('claude_api_key') || '',
-        model: localStorage.getItem('claude_model') || 'claude-sonnet-4-6',
+        provider: localStorage.getItem('ai_provider') || 'anthropic',
+        apiKey: localStorage.getItem('ai_api_key') || '',
+        model: localStorage.getItem('ai_model') || 'claude-sonnet-4-6',
         currentStep: 1
     };
 
@@ -56,13 +57,8 @@
         return text;
     }
 
-    // ===== Claude API =====
-    async function callClaude(pdfText, userPrompt) {
-        if (!state.apiKey) {
-            throw new Error('Please set your Claude API key first (click "API Key" in the header).');
-        }
-
-        const systemPrompt = `You are a document analysis assistant. The user will provide text extracted from a PDF and a prompt describing what text blocks they want extracted.
+    // ===== AI API =====
+    const SYSTEM_PROMPT = `You are a document analysis assistant. The user will provide text extracted from a PDF and a prompt describing what text blocks they want extracted.
 
 Your job is to extract distinct blocks of text from the document that match the user's request. Return ONLY valid JSON — no markdown, no code fences.
 
@@ -79,6 +75,7 @@ Rules:
 - Keep the original text as faithfully as possible
 - If you can't find relevant content, return an empty array []`;
 
+    async function callAnthropic(pdfText, userPrompt) {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
@@ -90,7 +87,7 @@ Rules:
             body: JSON.stringify({
                 model: state.model,
                 max_tokens: 4096,
-                system: systemPrompt,
+                system: SYSTEM_PROMPT,
                 messages: [{
                     role: 'user',
                     content: `Here is the PDF text:\n\n---\n${pdfText.substring(0, 80000)}\n---\n\nUser's extraction request: ${userPrompt}`
@@ -100,11 +97,50 @@ Rules:
 
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
-            throw new Error(err.error?.message || `API error: ${response.status}`);
+            throw new Error(err.error?.message || `Anthropic API error: ${response.status}`);
         }
 
         const data = await response.json();
-        const content = data.content[0].text;
+        return data.content[0].text;
+    }
+
+    async function callOpenAI(pdfText, userPrompt) {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${state.apiKey}`
+            },
+            body: JSON.stringify({
+                model: state.model,
+                max_tokens: 4096,
+                messages: [
+                    { role: 'system', content: SYSTEM_PROMPT },
+                    {
+                        role: 'user',
+                        content: `Here is the PDF text:\n\n---\n${pdfText.substring(0, 80000)}\n---\n\nUser's extraction request: ${userPrompt}`
+                    }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error?.message || `OpenAI API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.choices[0].message.content;
+    }
+
+    async function callAI(pdfText, userPrompt) {
+        if (!state.apiKey) {
+            throw new Error('Please set your API key first (click "API Key" in the header).');
+        }
+
+        const content = state.provider === 'openai'
+            ? await callOpenAI(pdfText, userPrompt)
+            : await callAnthropic(pdfText, userPrompt);
 
         // Parse JSON from response (handle potential markdown wrapping)
         let jsonStr = content;
@@ -170,7 +206,7 @@ Rules:
 
         try {
             state.pdfText = await extractPdfText(state.pdfFile);
-            const blocks = await callClaude(state.pdfText, prompt);
+            const blocks = await callAI(state.pdfText, prompt);
             if (!blocks.length) {
                 toast('No relevant blocks found. Try a different prompt.', 'error');
                 return;
@@ -459,11 +495,40 @@ Rules:
     }
 
     // ===== API Key Modal =====
+    function updateProviderUI(provider) {
+        const anthropicModels = $('#anthropic-models');
+        const openaiModels = $('#openai-models');
+        const keyInput = $('#api-key-input');
+
+        if (provider === 'openai') {
+            anthropicModels.style.display = 'none';
+            openaiModels.style.display = '';
+            keyInput.placeholder = 'sk-...';
+            // Select first visible OpenAI model if current selection is Anthropic
+            if (!$('#model-select').value.startsWith('gpt')) {
+                $('#model-select').value = 'gpt-4o';
+            }
+        } else {
+            anthropicModels.style.display = '';
+            openaiModels.style.display = 'none';
+            keyInput.placeholder = 'sk-ant-...';
+            if (!$('#model-select').value.startsWith('claude')) {
+                $('#model-select').value = 'claude-sonnet-4-6';
+            }
+        }
+    }
+
     function initApiModal() {
         $('#btn-api-settings').addEventListener('click', () => {
+            $('#provider-select').value = state.provider;
             $('#api-key-input').value = state.apiKey;
+            updateProviderUI(state.provider);
             $('#model-select').value = state.model;
             $('#api-modal').style.display = 'flex';
+        });
+
+        $('#provider-select').addEventListener('change', (e) => {
+            updateProviderUI(e.target.value);
         });
 
         $('#btn-cancel-api').addEventListener('click', () => {
@@ -471,12 +536,15 @@ Rules:
         });
 
         $('#btn-save-api').addEventListener('click', () => {
+            state.provider = $('#provider-select').value;
             state.apiKey = $('#api-key-input').value.trim();
             state.model = $('#model-select').value;
-            localStorage.setItem('claude_api_key', state.apiKey);
-            localStorage.setItem('claude_model', state.model);
+            localStorage.setItem('ai_provider', state.provider);
+            localStorage.setItem('ai_api_key', state.apiKey);
+            localStorage.setItem('ai_model', state.model);
             $('#api-modal').style.display = 'none';
-            toast(state.apiKey ? 'API key saved!' : 'API key cleared.', 'success');
+            const providerName = state.provider === 'openai' ? 'OpenAI' : 'Anthropic';
+            toast(state.apiKey ? `${providerName} API key saved!` : 'API key cleared.', 'success');
         });
 
         // Close on overlay click

@@ -226,8 +226,15 @@
         <!-- API Key Modal -->
         <div id="api-modal" class="modal-overlay" style="display:none;">
             <div class="modal">
-                <h3>Claude API Settings</h3>
-                <p>Enter your Anthropic API key. It's stored only in your browser's localStorage and never sent anywhere except the Anthropic API.</p>
+                <h3>API Settings</h3>
+                <p>Enter your API key. It's stored only in your browser's localStorage and never sent anywhere except the selected provider's API.</p>
+                <div class="config-group">
+                    <label for="provider-select">Provider</label>
+                    <select id="provider-select">
+                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="openai">OpenAI (GPT)</option>
+                    </select>
+                </div>
                 <div class="config-group">
                     <label for="api-key-input">API Key</label>
                     <input type="password" id="api-key-input" placeholder="sk-ant-...">
@@ -235,9 +242,16 @@
                 <div class="config-group">
                     <label for="model-select">Model</label>
                     <select id="model-select">
-                        <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (Recommended)</option>
-                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Faster/Cheaper)</option>
-                        <option value="claude-opus-4-6">Claude Opus 4.6 (Most Capable)</option>
+                        <optgroup id="anthropic-models" label="Anthropic">
+                            <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (Recommended)</option>
+                            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Faster/Cheaper)</option>
+                            <option value="claude-opus-4-6">Claude Opus 4.6 (Most Capable)</option>
+                        </optgroup>
+                        <optgroup id="openai-models" label="OpenAI" style="display:none;">
+                            <option value="gpt-4o">GPT-4o (Recommended)</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini (Faster/Cheaper)</option>
+                            <option value="gpt-4.1">GPT-4.1 (Latest)</option>
+                        </optgroup>
                     </select>
                 </div>
                 <div class="btn-row">
