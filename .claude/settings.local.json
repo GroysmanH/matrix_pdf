@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(brew list:*)",
+      "Read(//Users/nurdauletkhaidar/.nvm/versions/**)",
+      "Bash(git config:*)"
+    ]
+  }
+}
